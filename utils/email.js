@@ -1,25 +1,7 @@
-const nodemailer = require('nodemailer');
-const dns = require('dns');
+const sgMail = require('@sendgrid/mail');
 
-// Force IPv4 to prevent ENETUNREACH errors in environments like Railway
-// where Node tries to connect to Gmail's IPv6 address but outbound IPv6 is blocked.
-dns.setDefaultResultOrder('ipv4first');
-
-/**
- * Create a reusable transporter.
- * Uses Gmail by default. Set EMAIL_USER and EMAIL_PASS in .env
- */
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // false for 587 (uses STARTTLS)
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS, // Use an App Password, not your real Gmail password
-    },
-  });
-};
+// Set API key from environment variable
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 /**
  * Generate a random 6-digit OTP string
@@ -29,11 +11,13 @@ const generateOtp = () => {
 };
 
 /**
- * Send an OTP email for registration or password change
+ * Send an OTP email using SendGrid
+ * @param {Object} options
+ * @param {string} options.to - Recipient email
+ * @param {string} options.otp - The OTP code
+ * @param {string} options.purpose - The purpose of the OTP
  */
 const sendOtpEmail = async ({ to, otp, purpose }) => {
-  const transporter = createTransporter();
-
   const isRegister = purpose === 'register';
   const isForgot = purpose === 'forgot-password';
 
@@ -97,12 +81,23 @@ const sendOtpEmail = async ({ to, otp, purpose }) => {
     </html>
   `;
 
-  await transporter.sendMail({
-    from: `"LUCKY STAR FC" <${process.env.EMAIL_USER}>`,
+  const msg = {
     to,
+    from: process.env.SENDGRID_FROM_EMAIL || 'noreply@luckystarfc.com',
     subject,
     html,
-  });
+  };
+
+  try {
+    await sgMail.send(msg);
+    console.log(`✅ OTP sent to ${to} via SendGrid`);
+  } catch (error) {
+    console.error('❌ SendGrid error:', error);
+    if (error.response) {
+      console.error(error.response.body);
+    }
+    throw error;
+  }
 };
 
 module.exports = { generateOtp, sendOtpEmail };
