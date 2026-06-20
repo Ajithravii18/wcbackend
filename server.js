@@ -1,3 +1,6 @@
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first'); // Force IPv4 to fix Railway ENETUNREACH
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
