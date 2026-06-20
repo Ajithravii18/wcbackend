@@ -1,4 +1,9 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns');
+
+// Force IPv4 to prevent ENETUNREACH errors in environments like Railway
+// where Node tries to connect to Gmail's IPv6 address but outbound IPv6 is blocked.
+dns.setDefaultResultOrder('ipv4first');
 
 /**
  * Create a reusable transporter.
