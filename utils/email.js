@@ -1,23 +1,25 @@
-const sgMail = require('@sendgrid/mail');
+const nodemailer = require('nodemailer');
 
-// Set API key from environment variable
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+// Set up transporter
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // true for 465, false for 587
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+};
 
-/**
- * Generate a random 6-digit OTP string
- */
 const generateOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-/**
- * Send an OTP email using SendGrid
- * @param {Object} options
- * @param {string} options.to - Recipient email
- * @param {string} options.otp - The OTP code
- * @param {string} options.purpose - The purpose of the OTP
- */
 const sendOtpEmail = async ({ to, otp, purpose }) => {
+  const transporter = createTransporter();
+
   const isRegister = purpose === 'register';
   const isForgot = purpose === 'forgot-password';
 
@@ -81,23 +83,12 @@ const sendOtpEmail = async ({ to, otp, purpose }) => {
     </html>
   `;
 
-  const msg = {
+  await transporter.sendMail({
+    from: `"LUCKY STAR FC" <${process.env.EMAIL_USER}>`,
     to,
-    from: process.env.SENDGRID_FROM_EMAIL || 'noreply@luckystarfc.com',
     subject,
     html,
-  };
-
-  try {
-    await sgMail.send(msg);
-    console.log(`✅ OTP sent to ${to} via SendGrid`);
-  } catch (error) {
-    console.error('❌ SendGrid error:', error);
-    if (error.response) {
-      console.error(error.response.body);
-    }
-    throw error;
-  }
+  });
 };
 
 module.exports = { generateOtp, sendOtpEmail };
