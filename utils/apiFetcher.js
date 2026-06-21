@@ -39,14 +39,17 @@ async function evaluatePredictionsForMatch(match) {
   }
 }
 
-// Optimized polling: 3 minutes to stay within 100/day free limit for ~5 hours of live matches a day
-const FETCH_INTERVAL = 3 * 60 * 1000;
+// Check database every 1 minute, but only hit API every 15 mins for live matches
+const CHECK_DB_INTERVAL = 60 * 1000;
+const LIVE_API_COOLDOWN = 15 * 60 * 1000; // 15 mins
+let lastLiveFetch = 0;
+
 let fetchIntervalId = null;
 let pastFixturesCache = {};
 
 const startApiFetcher = () => {
   if (fetchIntervalId) return;
-  console.log('🌐 API-Football Fetcher started');
+  console.log('🌐 API-Football Fetcher started (Optimized)');
 
   fetchIntervalId = setInterval(async () => {
     try {
@@ -70,6 +73,11 @@ const startApiFetcher = () => {
       });
 
       if (activeMatches.length === 0) return;
+
+      if (now - lastLiveFetch < LIVE_API_COOLDOWN) {
+        return; // Skip fetching from API until 15 mins have passed
+      }
+      lastLiveFetch = now;
 
       // In a real scenario, you'd fetch live fixtures from API-Football
       // e.g., GET https://v3.football.api-sports.io/fixtures?live=all
@@ -258,7 +266,7 @@ const startApiFetcher = () => {
     } catch (err) {
       console.error('❌ Error fetching from API-Football:', err.response?.data || err.message);
     }
-  }, FETCH_INTERVAL);
+  }, CHECK_DB_INTERVAL);
 };
 
 const stopApiFetcher = () => {
