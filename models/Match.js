@@ -54,6 +54,10 @@ const matchSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    events: {
+      type: Array,
+      default: [],
+    },
     apiVerified: {
       type: Boolean,
       default: false,

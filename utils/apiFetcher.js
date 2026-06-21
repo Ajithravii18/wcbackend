@@ -77,6 +77,23 @@ const startApiFetcher = () => {
           const shortStatus = apiFixture.fixture.status.short;
           const elapsed = apiFixture.fixture.status.elapsed;
 
+          if (apiFixture.events && Array.isArray(apiFixture.events)) {
+            const goalEvents = apiFixture.events
+              .filter(e => e.type === 'Goal')
+              .map(e => ({
+                player: e.player?.name,
+                time: e.time?.elapsed,
+                extra: e.time?.extra,
+                team: e.team?.name,
+                detail: e.detail
+              }));
+            
+            if (JSON.stringify(match.events) !== JSON.stringify(goalEvents)) {
+              match.events = goalEvents;
+              isModified = true;
+            }
+          }
+
           if (match.shortStatus !== shortStatus) {
             match.shortStatus = shortStatus;
             isModified = true;
@@ -135,6 +152,23 @@ const startApiFetcher = () => {
             );
 
             if (pastFixture) {
+              if (pastFixture.events && Array.isArray(pastFixture.events)) {
+                const goalEvents = pastFixture.events
+                  .filter(e => e.type === 'Goal')
+                  .map(e => ({
+                    player: e.player?.name,
+                    time: e.time?.elapsed,
+                    extra: e.time?.extra,
+                    team: e.team?.name,
+                    detail: e.detail
+                  }));
+                
+                if (JSON.stringify(match.events) !== JSON.stringify(goalEvents)) {
+                  match.events = goalEvents;
+                  isModified = true;
+                }
+              }
+
               const shortStatus = pastFixture.fixture.status.short;
               if (['FT', 'AET', 'PEN'].includes(shortStatus)) {
                 match.homeScore = pastFixture.goals.home !== null ? pastFixture.goals.home : match.homeScore;
