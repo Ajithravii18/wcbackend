@@ -1,5 +1,43 @@
 const axios = require('axios');
 const Match = require('../models/Match');
+const Prediction = require('../models/Prediction');
+const Notification = require('../models/Notification');
+
+async function evaluatePredictionsForMatch(match) {
+  try {
+    const predictions = await Prediction.find({ match: match._id }).populate('user');
+    for (const pred of predictions) {
+      if (pred.points !== undefined && pred.points > 0) continue;
+
+      let points = 0;
+      let isExact = false;
+
+      if (pred.homeGoals === match.homeScore && pred.awayGoals === match.awayScore) {
+        points = 3;
+        isExact = true;
+      } else {
+        const predictedOutcome = pred.homeGoals > pred.awayGoals ? 'home' : (pred.homeGoals < pred.awayGoals ? 'away' : 'draw');
+        const actualOutcome = match.homeScore > match.awayScore ? 'home' : (match.homeScore < match.awayScore ? 'away' : 'draw');
+        if (predictedOutcome === actualOutcome) points = 1;
+      }
+
+      if (points > 0) {
+        pred.points = points;
+        await pred.save();
+
+        if (isExact) {
+          await Notification.create({
+            user: pred.user._id,
+            message: `🎉 Congratulations! You predicted the exact score (${match.homeScore}-${match.awayScore}) for ${match.homeTeam} vs ${match.awayTeam}! You earned 3 points.`,
+            type: 'prediction_correct'
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('❌ Failed to evaluate predictions:', err.message);
+  }
+}
 
 // Optimized polling: 3 minutes to stay within 100/day free limit for ~5 hours of live matches a day
 const FETCH_INTERVAL = 3 * 60 * 1000;
@@ -211,6 +249,10 @@ const startApiFetcher = () => {
         if (isModified) {
           await match.save();
           console.log(`🔄 API Updated Score: ${match.homeTeam} ${match.homeScore} - ${match.awayScore} ${match.awayTeam}`);
+          
+          if (match.status === 'completed') {
+            await evaluatePredictionsForMatch(match);
+          }
         }
       }
     } catch (err) {
