@@ -42,7 +42,6 @@ async function evaluatePredictionsForMatch(match) {
 // Check database every 1 minute, but only hit API every 15 mins for live matches
 const CHECK_DB_INTERVAL = 60 * 1000;
 const LIVE_API_COOLDOWN = 15 * 60 * 1000; // 15 mins
-let lastLiveFetch = 0;
 
 let fetchIntervalId = null;
 let pastFixturesCache = {};
@@ -74,10 +73,21 @@ const startApiFetcher = () => {
 
       if (activeMatches.length === 0) return;
 
-      if (now - lastLiveFetch < LIVE_API_COOLDOWN) {
-        return; // Skip fetching from API until 15 mins have passed
+      const System = require('../models/System');
+      let systemState = await System.findOne({ key: 'lastLiveFetch' });
+      if (!systemState) {
+        systemState = await System.create({ key: 'lastLiveFetch', value: 0 });
       }
-      lastLiveFetch = now;
+      
+      const lastLiveFetchDB = systemState.value;
+
+      if (now - lastLiveFetchDB < LIVE_API_COOLDOWN) {
+        return; // Skip fetching from API until 15 mins have passed since LAST global fetch
+      }
+      
+      // Update the DB timestamp so other instances/restarts respect the cooldown
+      systemState.value = now;
+      await systemState.save();
 
       // In a real scenario, you'd fetch live fixtures from API-Football
       // e.g., GET https://v3.football.api-sports.io/fixtures?live=all
