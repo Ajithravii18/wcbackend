@@ -46,6 +46,14 @@ const matchSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    elapsed: {
+      type: Number,
+      default: null,
+    },
+    shortStatus: {
+      type: String,
+      default: null,
+    },
     apiVerified: {
       type: Boolean,
       default: false,

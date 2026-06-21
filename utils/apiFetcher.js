@@ -75,6 +75,17 @@ const startApiFetcher = () => {
           // Update status based on API
           // 'FT' = Full Time, 'AET' = After Extra Time, 'PEN' = Penalties
           const shortStatus = apiFixture.fixture.status.short;
+          const elapsed = apiFixture.fixture.status.elapsed;
+
+          if (match.shortStatus !== shortStatus) {
+            match.shortStatus = shortStatus;
+            isModified = true;
+          }
+          if (match.elapsed !== elapsed) {
+            match.elapsed = elapsed;
+            isModified = true;
+          }
+
           if (['FT', 'AET', 'PEN'].includes(shortStatus)) {
             match.status = 'completed';
             
