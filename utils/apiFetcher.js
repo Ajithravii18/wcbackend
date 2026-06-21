@@ -4,6 +4,7 @@ const Match = require('../models/Match');
 // Poll every 15 seconds
 const FETCH_INTERVAL = 15 * 1000;
 let fetchIntervalId = null;
+let pastFixturesCache = {};
 
 const startApiFetcher = () => {
   if (fetchIntervalId) return;
@@ -91,11 +92,11 @@ const startApiFetcher = () => {
             // Match is likely finished, fetch final score from its specific date
             const dateStr = match.kickoffTime.toISOString().split('T')[0];
             
-            // We use a caching object if declared outside the loop, or just fetch directly. 
-            // Since this runs in a loop, let's fetch it if not cached (assuming pastFixturesCache is declared outside the loop, we will declare it below)
-            if (!this.pastFixturesCache) this.pastFixturesCache = {};
+            if (!pastFixturesCache) {
+              // Note: declared at the top of the file
+            }
             
-            if (!this.pastFixturesCache[dateStr]) {
+            if (!pastFixturesCache[dateStr]) {
               try {
                 const pastRes = await axios.get(`https://${apiHost}/fixtures?date=${dateStr}`, {
                   headers: {
@@ -103,14 +104,14 @@ const startApiFetcher = () => {
                     'x-rapidapi-host': apiHost
                   }
                 });
-                this.pastFixturesCache[dateStr] = pastRes.data.response || [];
+                pastFixturesCache[dateStr] = pastRes.data.response || [];
               } catch (err) {
                 console.error(`❌ Failed to fetch fixtures for date ${dateStr}:`, err.message);
-                this.pastFixturesCache[dateStr] = [];
+                pastFixturesCache[dateStr] = [];
               }
             }
 
-            const pastFixture = this.pastFixturesCache[dateStr].find(f => 
+            const pastFixture = pastFixturesCache[dateStr].find(f => 
               f.teams.home.name.toLowerCase() === match.homeTeam.toLowerCase() ||
               f.teams.away.name.toLowerCase() === match.awayTeam.toLowerCase()
             );
