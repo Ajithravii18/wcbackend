@@ -1,28 +1,26 @@
 const axios = require('axios');
 const Match = require('../models/Match');
 
-// User requested 30 seconds. Warning: This requires a paid API-Football plan!
+// Optimized polling: 30 seconds for live matches (Sportmonks allows up to 3000/hr)
 const FETCH_INTERVAL = 30 * 1000;
 let fetchIntervalId = null;
-let pastFixturesCache = {};
 
 const startApiFetcher = () => {
   if (fetchIntervalId) return;
-  console.log('🌐 API-Football Fetcher started');
+  console.log('🌐 Sportmonks API Fetcher started');
 
   fetchIntervalId = setInterval(async () => {
     try {
-      const apiKey = process.env.API_FOOTBALL_KEY;
-      const apiHost = process.env.API_FOOTBALL_HOST || 'v3.football.api-sports.io';
+      const apiToken = process.env.SPORTMONKS_API_TOKEN;
       
-      if (!apiKey || apiKey === 'YOUR_API_KEY_HERE') {
-        console.warn('⚠️ API_FOOTBALL_KEY is not set. Live scores will not be updated.');
+      if (!apiToken || apiToken === 'YOUR_API_KEY_HERE') {
+        console.warn('⚠️ SPORTMONKS_API_TOKEN is not set. Live scores will not be updated.');
         return;
       }
 
       const now = Date.now();
       
-      // Find matches where kickoff time is in the past AND (status is NOT 'completed' OR not apiVerified)
+      // Find active matches
       const activeMatches = await Match.find({
         kickoffTime: { $lte: new Date() },
         $or: [
@@ -33,188 +31,140 @@ const startApiFetcher = () => {
 
       if (activeMatches.length === 0) return;
 
-      // In a real scenario, you'd fetch live fixtures from API-Football
-      // e.g., GET https://v3.football.api-sports.io/fixtures?live=all
-      const response = await axios.get(`https://${apiHost}/fixtures?live=all`, {
-        headers: {
-          'x-rapidapi-key': apiKey,
-          'x-apisports-key': apiKey,
-          'x-rapidapi-host': apiHost
-        }
-      });
+      // 1. Fetch Live Scores
+      // include=participants;scores;state;events
+      const liveRes = await axios.get(`https://api.sportmonks.com/v3/football/livescores/inplay?api_token=${apiToken}&include=participants;scores;state;events`);
+      const liveFixtures = liveRes.data.data || [];
 
-      if (response.data.errors && Object.keys(response.data.errors).length > 0) {
-        console.error('❌ API-Football Error:', response.data.errors);
-        return;
+      // Also fetch fixtures for the day to catch ones that just finished but aren't in 'inplay' anymore
+      // To save requests, only fetch if there's a match that's >120 mins old
+      const needsHistorical = activeMatches.some(m => now - m.kickoffTime.getTime() > 120 * 60 * 1000);
+      let todayFixtures = [];
+      if (needsHistorical) {
+        const dateStr = new Date().toISOString().split('T')[0];
+        const histRes = await axios.get(`https://api.sportmonks.com/v3/football/fixtures/date/${dateStr}?api_token=${apiToken}&include=participants;scores;state;events`);
+        todayFixtures = histRes.data.data || [];
       }
 
-      const liveFixtures = response.data.response || [];
-
       for (const match of activeMatches) {
-        // Find corresponding live fixture from API using team names
-        // Note: In production, it is safer to map matches by API Fixture ID,
-        // but string matching works as a fallback.
-        const apiFixture = liveFixtures.find(f => 
-          f.teams.home.name.toLowerCase() === match.homeTeam.toLowerCase() ||
-          f.teams.away.name.toLowerCase() === match.awayTeam.toLowerCase()
-        );
+        // Find corresponding fixture from API using team names
+        const findFixture = (fixtures) => {
+          return fixtures.find(f => {
+            if (!f.participants) return false;
+            const homeP = f.participants.find(p => p.meta?.location === 'home');
+            const awayP = f.participants.find(p => p.meta?.location === 'away');
+            
+            if (!homeP || !awayP) return false;
+            
+            // Check if names match
+            const homeMatches = homeP.name.toLowerCase().includes(match.homeTeam.toLowerCase()) || match.homeTeam.toLowerCase().includes(homeP.name.toLowerCase());
+            const awayMatches = awayP.name.toLowerCase().includes(match.awayTeam.toLowerCase()) || match.awayTeam.toLowerCase().includes(awayP.name.toLowerCase());
+            
+            return homeMatches || awayMatches;
+          });
+        };
+
+        let apiFixture = findFixture(liveFixtures);
+
+        if (!apiFixture && todayFixtures.length > 0) {
+           apiFixture = findFixture(todayFixtures);
+        }
 
         let isModified = false;
 
         if (apiFixture) {
-          // Update score
-          if (apiFixture.goals.home !== null && match.homeScore !== apiFixture.goals.home) {
-            match.homeScore = apiFixture.goals.home;
-            isModified = true;
-          }
-          if (apiFixture.goals.away !== null && match.awayScore !== apiFixture.goals.away) {
-            match.awayScore = apiFixture.goals.away;
-            isModified = true;
-          }
+          // Identify participants
+          const homeParticipant = apiFixture.participants?.find(p => p.meta?.location === 'home');
+          const awayParticipant = apiFixture.participants?.find(p => p.meta?.location === 'away');
 
-          // Update status based on API
-          // 'FT' = Full Time, 'AET' = After Extra Time, 'PEN' = Penalties
-          const shortStatus = apiFixture.fixture.status.short;
-          const elapsed = apiFixture.fixture.status.elapsed;
+          // Extract scores
+          if (apiFixture.scores && Array.isArray(apiFixture.scores)) {
+            // Find current scores
+            const homeScoreObj = apiFixture.scores.find(s => s.participant_id === homeParticipant?.id && (s.description === 'CURRENT' || s.description === 'PENALTIES'));
+            const awayScoreObj = apiFixture.scores.find(s => s.participant_id === awayParticipant?.id && (s.description === 'CURRENT' || s.description === 'PENALTIES'));
 
-          if (apiFixture.events && Array.isArray(apiFixture.events)) {
-            const goalEvents = apiFixture.events
-              .filter(e => e.type === 'Goal')
-              .map(e => ({
-                player: e.player?.name,
-                time: e.time?.elapsed,
-                extra: e.time?.extra,
-                team: e.team?.name,
-                detail: e.detail
-              }));
-            
-            if (JSON.stringify(match.events) !== JSON.stringify(goalEvents)) {
-              match.events = goalEvents;
+            if (homeScoreObj && match.homeScore !== homeScoreObj.score.goals) {
+              match.homeScore = homeScoreObj.score.goals;
+              isModified = true;
+            }
+            if (awayScoreObj && match.awayScore !== awayScoreObj.score.goals) {
+              match.awayScore = awayScoreObj.score.goals;
               isModified = true;
             }
           }
 
-          if (match.shortStatus !== shortStatus) {
-            match.shortStatus = shortStatus;
-            isModified = true;
-          }
-          if (match.elapsed !== elapsed) {
-            match.elapsed = elapsed;
-            isModified = true;
-          }
-
-          if (['FT', 'AET', 'PEN'].includes(shortStatus)) {
-            match.status = 'completed';
-            
-            // Determine winner
-            if (match.homeScore > match.awayScore) match.winner = match.homeTeam;
-            else if (match.awayScore > match.homeScore) match.winner = match.awayTeam;
-            else match.winner = 'Draw';
-            
-            isModified = true;
-            console.log(`🏁 API Match Completed: ${match.homeTeam} ${match.homeScore} - ${match.awayScore} ${match.awayTeam}`);
-          } else {
-            if (match.status !== 'live') {
-              match.status = 'live';
+          // Extract state
+          if (apiFixture.state) {
+            const shortStatus = apiFixture.state.short_name; // '1H', 'HT', 'FT', etc.
+            if (match.shortStatus !== shortStatus) {
+              match.shortStatus = shortStatus;
               isModified = true;
+            }
+
+            // Extract elapsed (sometimes minute is in the fixture itself or state)
+            const elapsed = apiFixture.minute || null; // Sportmonks often puts minute on the root fixture
+            if (elapsed && match.elapsed !== elapsed) {
+              match.elapsed = elapsed;
+              isModified = true;
+            }
+
+            // Extract events (goals)
+            if (apiFixture.events && Array.isArray(apiFixture.events)) {
+              // Goals usually have specific type_ids, or just checking for result/player_name
+              const goalEvents = apiFixture.events
+                .filter(e => e.type_id === 14 || e.type_id === 15 || e.type_id === 16 || e.type?.name?.toLowerCase().includes('goal')) // 14: Goal, 15: Penalty, 16: Own Goal
+                .map(e => ({
+                  player: e.player_name,
+                  time: e.minute,
+                  extra: e.extra_minute,
+                  team: e.participant_id === homeParticipant?.id ? match.homeTeam : match.awayTeam,
+                  detail: e.type_id === 15 ? 'Penalty' : e.type_id === 16 ? 'Own Goal' : 'Goal'
+                }));
+              
+              if (JSON.stringify(match.events) !== JSON.stringify(goalEvents)) {
+                match.events = goalEvents;
+                isModified = true;
+              }
+            }
+
+            if (['FT', 'AET', 'PEN', 'POST', 'CANC'].includes(shortStatus)) {
+              match.status = 'completed';
+              match.apiVerified = true;
+              
+              if (match.homeScore > match.awayScore) match.winner = match.homeTeam;
+              else if (match.awayScore > match.homeScore) match.winner = match.awayTeam;
+              else match.winner = 'Draw';
+              
+              isModified = true;
+              console.log(`🏁 Sportmonks Match Completed: ${match.homeTeam} ${match.homeScore} - ${match.awayScore} ${match.awayTeam}`);
+            } else {
+              if (match.status !== 'live') {
+                match.status = 'live';
+                isModified = true;
+              }
             }
           }
         } else {
-          // If the match is not in the live fixtures, check if it's over 120 minutes past kickoff
-          const kickoff = match.kickoffTime.getTime();
-          if (now - kickoff > 120 * 60 * 1000) {
-            // Match is likely finished, fetch final score from its specific date
-            const dateStr = match.kickoffTime.toISOString().split('T')[0];
-            
-            if (!pastFixturesCache) {
-              // Note: declared at the top of the file
-            }
-            
-            if (!pastFixturesCache[dateStr]) {
-              try {
-                const pastRes = await axios.get(`https://${apiHost}/fixtures?date=${dateStr}`, {
-                  headers: {
-                    'x-rapidapi-key': apiKey,
-                    'x-apisports-key': apiKey,
-                    'x-rapidapi-host': apiHost
-                  }
-                });
-                pastFixturesCache[dateStr] = pastRes.data.response || [];
-              } catch (err) {
-                console.error(`❌ Failed to fetch fixtures for date ${dateStr}:`, err.message);
-                pastFixturesCache[dateStr] = [];
-              }
-            }
-
-            const pastFixture = pastFixturesCache[dateStr].find(f => 
-              f.teams.home.name.toLowerCase() === match.homeTeam.toLowerCase() ||
-              f.teams.away.name.toLowerCase() === match.awayTeam.toLowerCase()
-            );
-
-            if (pastFixture) {
-              if (pastFixture.events && Array.isArray(pastFixture.events)) {
-                const goalEvents = pastFixture.events
-                  .filter(e => e.type === 'Goal')
-                  .map(e => ({
-                    player: e.player?.name,
-                    time: e.time?.elapsed,
-                    extra: e.time?.extra,
-                    team: e.team?.name,
-                    detail: e.detail
-                  }));
-                
-                if (JSON.stringify(match.events) !== JSON.stringify(goalEvents)) {
-                  match.events = goalEvents;
-                  isModified = true;
-                }
-              }
-
-              const shortStatus = pastFixture.fixture.status.short;
-              if (['FT', 'AET', 'PEN'].includes(shortStatus)) {
-                match.homeScore = pastFixture.goals.home !== null ? pastFixture.goals.home : match.homeScore;
-                match.awayScore = pastFixture.goals.away !== null ? pastFixture.goals.away : match.awayScore;
-                match.status = 'completed';
-                match.apiVerified = true;
-                
-                if (match.homeScore > match.awayScore) match.winner = match.homeTeam;
-                else if (match.awayScore > match.homeScore) match.winner = match.awayTeam;
-                else match.winner = 'Draw';
-                
-                isModified = true;
-                console.log(`🏁 API Match Missed & Completed: ${match.homeTeam} ${match.homeScore} - ${match.awayScore} ${match.awayTeam}`);
-              } else if (['PST', 'CANC', 'ABD'].includes(shortStatus)) {
-                // Handle Postponed or Cancelled by marking completed so it doesn't loop forever
-                match.status = 'completed';
-                match.apiVerified = true;
-                isModified = true;
-                console.log(`⚠️ Match Postponed/Cancelled: ${match.homeTeam} vs ${match.awayTeam}`);
-              }
-            } else {
-              // If we STILL can't find it in the API response, and it's 5 hours past kickoff, force complete to avoid a permanent loop
-              if (now - kickoff > 5 * 60 * 60 * 1000) {
-                 match.status = 'completed';
-                 match.apiVerified = true;
-                 if (match.homeScore > match.awayScore) match.winner = match.homeTeam;
-                 else if (match.awayScore > match.homeScore) match.winner = match.awayTeam;
-                 else match.winner = 'Draw';
-                 isModified = true;
-                 console.log(`⚠️ Force completing unmatched match: ${match.homeTeam} vs ${match.awayTeam}`);
-              }
-            }
-          } else if (match.status === 'completed' && match.apiVerified !== true) {
-             // If it's already marked completed but not verified, and it's not >120m past kickoff,
-             // wait until it IS >120m past kickoff so we don't prematurely verify it before API updates.
-             // If we really want to verify it immediately, we'd do it here, but it's handled above when >120m.
-          }
+           // Fallback logic
+           const kickoff = match.kickoffTime.getTime();
+           if (now - kickoff > 5 * 60 * 60 * 1000) {
+               match.status = 'completed';
+               match.apiVerified = true;
+               if (match.homeScore > match.awayScore) match.winner = match.homeTeam;
+               else if (match.awayScore > match.homeScore) match.winner = match.awayTeam;
+               else match.winner = 'Draw';
+               isModified = true;
+               console.log(`⚠️ Force completing unmatched match: ${match.homeTeam} vs ${match.awayTeam}`);
+           }
         }
 
         if (isModified) {
           await match.save();
-          console.log(`🔄 API Updated Score: ${match.homeTeam} ${match.homeScore} - ${match.awayScore} ${match.awayTeam}`);
+          console.log(`🔄 Sportmonks Updated Score: ${match.homeTeam} ${match.homeScore} - ${match.awayScore} ${match.awayTeam}`);
         }
       }
     } catch (err) {
-      console.error('❌ Error fetching from API-Football:', err.response?.data || err.message);
+      console.error('❌ Error fetching from Sportmonks:', err.response?.data || err.message);
     }
   }, FETCH_INTERVAL);
 };
@@ -223,7 +173,7 @@ const stopApiFetcher = () => {
   if (fetchIntervalId) {
     clearInterval(fetchIntervalId);
     fetchIntervalId = null;
-    console.log('🌐 API-Football Fetcher stopped');
+    console.log('🌐 Sportmonks API Fetcher stopped');
   }
 };
 
