@@ -77,6 +77,11 @@ const updateMatchResult = async (req, res) => {
     if (awayScore !== undefined) updateFields.awayScore = awayScore;
     if (status) updateFields.status = status;
     if (winner !== null) updateFields.winner = winner;
+    
+    // If admin manually completes it, mark it as verified so auto-fetcher ignores it
+    if (status === 'completed') {
+      updateFields.apiVerified = true;
+    }
 
     // Explicitly use { returnDocument: 'after' } to prevent deprecation warnings
     const updated = await Match.findByIdAndUpdate(

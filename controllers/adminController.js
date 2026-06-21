@@ -108,9 +108,76 @@ const evaluateAllMatches = async (req, res) => {
   }
 };
 
+// @desc    Update match score/status manually
+// @route   PUT /api/admin/match/:id
+// @access  Private/Admin
+const updateMatch = async (req, res) => {
+  try {
+    const Match = require('../models/Match');
+    const { homeScore, awayScore, status } = req.body;
+
+    const match = await Match.findById(req.params.id);
+    if (!match) {
+      return res.status(404).json({ message: 'Match not found' });
+    }
+
+    if (homeScore !== undefined) match.homeScore = homeScore;
+    if (awayScore !== undefined) match.awayScore = awayScore;
+    if (status) match.status = status;
+
+    if (match.status === 'completed') {
+      if (match.homeScore > match.awayScore) match.winner = match.homeTeam;
+      else if (match.awayScore > match.homeScore) match.winner = match.awayTeam;
+      else match.winner = 'Draw';
+      match.apiVerified = true;
+    }
+
+    await match.save();
+
+    // If completed, evaluate predictions specifically for this match
+    if (match.status === 'completed') {
+      const predictions = await Prediction.find({ match: match._id }).populate('user');
+      const Notification = require('../models/Notification');
+      
+      for (const pred of predictions) {
+        if (pred.points > 0) continue;
+
+        let points = 0;
+        let isExact = false;
+        if (pred.homeGoals === match.homeScore && pred.awayGoals === match.awayScore) {
+          points = 3;
+          isExact = true;
+        } else {
+          const predictedOutcome = pred.homeGoals > pred.awayGoals ? 'home' : (pred.homeGoals < pred.awayGoals ? 'away' : 'draw');
+          const actualOutcome = match.homeScore > match.awayScore ? 'home' : (match.homeScore < match.awayScore ? 'away' : 'draw');
+          if (predictedOutcome === actualOutcome) points = 1;
+        }
+
+        if (points > 0) {
+          pred.points = points;
+          await pred.save();
+
+          if (isExact) {
+            await Notification.create({
+              user: pred.user._id,
+              message: `🎉 Congratulations! You predicted the exact score (${match.homeScore}-${match.awayScore}) for ${match.homeTeam} vs ${match.awayTeam}! You earned 3 points.`,
+              type: 'prediction_correct'
+            });
+          }
+        }
+      }
+    }
+
+    res.json({ message: 'Match updated successfully', match });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getAllUsers,
   toggleFreezeUser,
   deleteUser,
-  evaluateAllMatches
+  evaluateAllMatches,
+  updateMatch
 };
