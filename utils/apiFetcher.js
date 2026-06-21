@@ -105,6 +105,7 @@ const startApiFetcher = () => {
       }
 
       const liveFixtures = response.data.response || [];
+      let pastFetchCountThisCycle = 0;
 
       for (const match of activeMatches) {
         // Find corresponding live fixture from API using team names
@@ -178,15 +179,27 @@ const startApiFetcher = () => {
         } else {
           // If the match is not in the live fixtures, check if it's over 120 minutes past kickoff
           const kickoff = match.kickoffTime.getTime();
-          if (now - kickoff > 120 * 60 * 1000) {
+          
+          // Force complete very old matches immediately without burning an API request
+          if (now - kickoff > 24 * 60 * 60 * 1000) {
+            match.status = 'completed';
+            match.apiVerified = true;
+            if (match.homeScore > match.awayScore) match.winner = match.homeTeam;
+            else if (match.awayScore > match.homeScore) match.winner = match.awayTeam;
+            else match.winner = 'Draw';
+            isModified = true;
+            console.log(`⚠️ Force completing old unmatched match (>24hr): ${match.homeTeam} vs ${match.awayTeam}`);
+          } 
+          else if (now - kickoff > 120 * 60 * 1000) {
             // Match is likely finished, fetch final score from its specific date
             const dateStr = match.kickoffTime.toISOString().split('T')[0];
             
-            if (!pastFixturesCache) {
-              // Note: declared at the top of the file
-            }
-            
             if (!pastFixturesCache[dateStr]) {
+              if (pastFetchCountThisCycle >= 2) {
+                continue; // Only allow 2 past-date fetches per cycle to strictly avoid 10-req/min API limit burst
+              }
+              pastFetchCountThisCycle++;
+
               try {
                 const pastRes = await axios.get(`https://${apiHost}/fixtures?date=${dateStr}`, {
                   headers: {
