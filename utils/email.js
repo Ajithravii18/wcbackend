@@ -2,25 +2,23 @@ const nodemailer = require('nodemailer');
 const dns = require('dns');
 
 // Set up transporter
-const createTransporter = () => {
+const createTransporter = async () => {
   const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
   const emailPort = Number(process.env.EMAIL_PORT || 587);
   const emailSecure = process.env.EMAIL_SECURE === 'true' || emailPort === 465;
 
+  const { address } = await dns.promises.lookup(emailHost, { family: 4 });
+
   return nodemailer.createTransport({
-    host: emailHost,
+    host: address,
     port: emailPort,
     secure: emailSecure,
     requireTLS: !emailSecure,
     connectionTimeout: 30000,
     greetingTimeout: 30000,
     socketTimeout: 30000,
-    lookup: (hostname, options, callback) => {
-      dns.lookup(hostname, { family: 4 }, (err, address, family) => {
-        callback(err, address, family);
-      });
-    },
     tls: {
+      servername: emailHost,
       rejectUnauthorized: false,
     },
     auth: {
@@ -37,7 +35,7 @@ const generateOtp = () => {
 };
 
 const sendOtpEmail = async ({ to, otp, purpose }) => {
-  const transporter = createTransporter();
+  const transporter = await createTransporter();
 
   const isRegister = purpose === 'register';
   const isForgot = purpose === 'forgot-password';
