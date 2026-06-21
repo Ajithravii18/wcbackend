@@ -13,9 +13,9 @@ if (useSendGrid) {
 
 const createTransporter = () => {
   return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: process.env.EMAIL_PORT || 465,
+    secure: process.env.EMAIL_SECURE !== 'false',
     tls: {
       rejectUnauthorized: false,
     },
