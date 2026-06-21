@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 const dns = require('dns');
 const sgMail = require('@sendgrid/mail');
+const https = require('https');
 
 // Force IPv4 to prevent ENETUNREACH on environments without IPv6 routing (like Render)
 if (dns.setDefaultResultOrder) {
@@ -8,6 +9,7 @@ if (dns.setDefaultResultOrder) {
 }
 
 const useSendGrid = process.env.EMAIL_SERVICE === 'sendgrid';
+const useBrevo    = process.env.EMAIL_SERVICE === 'brevo';
 
 if (useSendGrid) {
   if (!process.env.SENDGRID_API_KEY) {
@@ -15,6 +17,52 @@ if (useSendGrid) {
   }
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
+
+// Send via Brevo HTTP API (no SMTP — works on Render free tier)
+const sendViaBrevo = ({ to, from, subject, html }) => {
+  return new Promise((resolve, reject) => {
+    const fromEmail = from.match(/<(.+)>/)
+      ? from.match(/<(.+)>/)[1]
+      : from;
+    const fromName  = from.match(/^"?([^"<]+)"?\s*</) 
+      ? from.match(/^"?([^"<]+)"?\s*</)[1].trim() 
+      : 'Lucky Star FC';
+
+    const payload = JSON.stringify({
+      sender:   { name: fromName, email: fromEmail },
+      to:       [{ email: to }],
+      subject,
+      htmlContent: html,
+    });
+
+    const options = {
+      hostname: 'api.brevo.com',
+      path:     '/v3/smtp/email',
+      method:   'POST',
+      headers: {
+        'api-key':       process.env.BREVO_API_KEY,
+        'Content-Type':  'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve();
+        } else {
+          reject(new Error(`Brevo API error ${res.statusCode}: ${data}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+};
 
 const createTransporter = () => {
   const port = process.env.EMAIL_PORT || 465;
@@ -108,23 +156,18 @@ const sendOtpEmail = async ({ to, otp, purpose }) => {
   const html = buildEmailHtml(otp, purpose);
   const from = process.env.EMAIL_FROM || `"LUCKY STAR FC" <${process.env.EMAIL_USER || 'no-reply@lucky-star-fc.com'}>`;
 
+  if (useBrevo) {
+    await sendViaBrevo({ to, from, subject, html });
+    return;
+  }
+
   if (useSendGrid) {
-    await sgMail.send({
-      to,
-      from,
-      subject,
-      html,
-    });
+    await sgMail.send({ to, from, subject, html });
     return;
   }
 
   const transporter = createTransporter();
-  await transporter.sendMail({
-    from,
-    to,
-    subject,
-    html,
-  });
+  await transporter.sendMail({ from, to, subject, html });
 };
 
 module.exports = { generateOtp, sendOtpEmail };
