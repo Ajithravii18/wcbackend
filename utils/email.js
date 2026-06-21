@@ -3,10 +3,18 @@ const dns = require('dns');
 
 // Set up transporter
 const createTransporter = () => {
+  const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
+  const emailPort = Number(process.env.EMAIL_PORT || 587);
+  const emailSecure = process.env.EMAIL_SECURE === 'true' || emailPort === 465;
+
   return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true, // true for 465, false for 587
+    host: emailHost,
+    port: emailPort,
+    secure: emailSecure,
+    requireTLS: !emailSecure,
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000,
     lookup: (hostname, options, callback) => {
       dns.lookup(hostname, { family: 4 }, (err, address, family) => {
         callback(err, address, family);
@@ -19,6 +27,8 @@ const createTransporter = () => {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
+    logger: true,
+    debug: true,
   });
 };
 

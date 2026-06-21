@@ -49,7 +49,8 @@ const sendRegisterOtp = async (req, res) => {
     res.json({ message: 'OTP sent to your email. Valid for 10 minutes.' });
   } catch (err) {
     console.error('sendRegisterOtp error:', err);
-    res.status(500).json({ message: 'Failed to send OTP. Check email config.' });
+    const message = err.response && err.response.message ? err.response.message : err.message;
+    res.status(500).json({ message: `Failed to send OTP. ${message}` });
   }
 };
 
