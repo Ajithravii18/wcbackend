@@ -40,7 +40,7 @@ const sendViaBrevo = ({ to, from, subject, html }) => {
       path:     '/v3/smtp/email',
       method:   'POST',
       headers: {
-        'api-key':       process.env.BREVO_API_KEY,
+        'api-key':       (process.env.BREVO_API_KEY || '').trim(),
         'Content-Type':  'application/json',
         'Content-Length': Buffer.byteLength(payload),
       },
