@@ -49,7 +49,14 @@ const sendRegisterOtp = async (req, res) => {
     res.json({ message: 'OTP sent to your email. Valid for 10 minutes.' });
   } catch (err) {
     console.error('sendRegisterOtp error:', err);
-    const message = err.response && err.response.message ? err.response.message : err.message;
+    if (err.response) {
+      console.error('sendRegisterOtp response headers:', err.response.headers);
+      console.error('sendRegisterOtp response body:', err.response.body);
+    }
+    const sgErrors = err.response?.body?.errors;
+    const message = sgErrors
+      ? sgErrors.map((error) => error.message || error.field || error.help).join('; ')
+      : err.response?.body?.message || err.response?.message || err.message;
     res.status(500).json({ message: `Failed to send OTP. ${message}` });
   }
 };
