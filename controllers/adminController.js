@@ -71,8 +71,46 @@ const deleteUser = async (req, res) => {
   }
 };
 
+// @desc    Force evaluate all completed matches
+// @route   PUT /api/admin/evaluate
+// @access  Private/Admin
+const evaluateAllMatches = async (req, res) => {
+  try {
+    const Match = require('../models/Match');
+    const matches = await Match.find({ status: 'completed' });
+    let count = 0;
+
+    for (const match of matches) {
+      const predictions = await Prediction.find({ match: match._id });
+      for (const pred of predictions) {
+        if (pred.points > 0) continue; // Already calculated
+
+        let points = 0;
+        if (pred.homeGoals === match.homeScore && pred.awayGoals === match.awayScore) {
+          points = 3;
+        } else {
+          const predictedOutcome = pred.homeGoals > pred.awayGoals ? 'home' : (pred.homeGoals < pred.awayGoals ? 'away' : 'draw');
+          const actualOutcome = match.homeScore > match.awayScore ? 'home' : (match.homeScore < match.awayScore ? 'away' : 'draw');
+          if (predictedOutcome === actualOutcome) points = 1;
+        }
+
+        if (points > 0) {
+          pred.points = points;
+          await pred.save();
+          count++;
+        }
+      }
+    }
+
+    res.json({ message: `Successfully evaluated matches. Awarded points to ${count} new predictions.` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   getAllUsers,
   toggleFreezeUser,
   deleteUser,
+  evaluateAllMatches
 };
