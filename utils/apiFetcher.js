@@ -42,6 +42,11 @@ const startApiFetcher = () => {
         }
       });
 
+      if (response.data.errors && Object.keys(response.data.errors).length > 0) {
+        console.error('❌ API-Football Error:', response.data.errors);
+        return;
+      }
+
       const liveFixtures = response.data.response || [];
 
       for (const match of activeMatches) {
