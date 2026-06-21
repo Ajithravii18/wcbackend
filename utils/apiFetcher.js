@@ -1,8 +1,8 @@
 const axios = require('axios');
 const Match = require('../models/Match');
 
-// Poll every 15 seconds
-const FETCH_INTERVAL = 15 * 1000;
+// Optimized polling: 3 minutes to stay within 100/day free limit for ~5 hours of live matches a day
+const FETCH_INTERVAL = 3 * 60 * 1000;
 let fetchIntervalId = null;
 let pastFixturesCache = {};
 
