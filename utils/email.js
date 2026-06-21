@@ -5,34 +5,24 @@ const sgMail = require('@sendgrid/mail');
 const useSendGrid = process.env.EMAIL_SERVICE === 'sendgrid';
 
 if (useSendGrid) {
+  if (!process.env.SENDGRID_API_KEY) {
+    throw new Error('SENDGRID_API_KEY is required when EMAIL_SERVICE=sendgrid');
+  }
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
-const createTransporter = async () => {
-  const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
-  const emailPort = Number(process.env.EMAIL_PORT || 587);
-  const emailSecure = process.env.EMAIL_SECURE === 'true' || emailPort === 465;
-
-  const { address } = await dns.promises.lookup(emailHost, { family: 4 });
-
+const createTransporter = () => {
   return nodemailer.createTransport({
-    host: address,
-    port: emailPort,
-    secure: emailSecure,
-    requireTLS: !emailSecure,
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000,
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
     tls: {
-      servername: emailHost,
       rejectUnauthorized: false,
     },
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
-    logger: true,
-    debug: true,
   });
 };
 
@@ -110,7 +100,7 @@ const sendOtpEmail = async ({ to, otp, purpose }) => {
     : '🔐 LUCKY STAR FC — Password Change OTP';
 
   const html = buildEmailHtml(otp, purpose);
-  const from = process.env.EMAIL_FROM || `"LUCKY STAR FC" <${process.env.EMAIL_USER}>`;
+  const from = process.env.EMAIL_FROM || `"LUCKY STAR FC" <${process.env.EMAIL_USER || 'no-reply@lucky-star-fc.com'}>`;
 
   if (useSendGrid) {
     await sgMail.send({
@@ -122,7 +112,7 @@ const sendOtpEmail = async ({ to, otp, purpose }) => {
     return;
   }
 
-  const transporter = await createTransporter();
+  const transporter = createTransporter();
   await transporter.sendMail({
     from,
     to,
