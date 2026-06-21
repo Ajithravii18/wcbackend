@@ -1,7 +1,13 @@
 const nodemailer = require('nodemailer');
 const dns = require('dns');
+const sgMail = require('@sendgrid/mail');
 
-// Set up transporter
+const useSendGrid = process.env.EMAIL_SERVICE === 'sendgrid';
+
+if (useSendGrid) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
+
 const createTransporter = async () => {
   const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
   const emailPort = Number(process.env.EMAIL_PORT || 587);
@@ -34,17 +40,9 @@ const generateOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-const sendOtpEmail = async ({ to, otp, purpose }) => {
-  const transporter = await createTransporter();
-
+const buildEmailHtml = (otp, purpose) => {
   const isRegister = purpose === 'register';
   const isForgot = purpose === 'forgot-password';
-
-  const subject = isRegister
-    ? '🏆 LUCKY STAR FC — Verify Your Account'
-    : isForgot
-    ? '🔑 LUCKY STAR FC — Reset Your Password'
-    : '🔐 LUCKY STAR FC — Password Change OTP';
 
   const actionLabel = isRegister
     ? 'complete your registration'
@@ -58,7 +56,7 @@ const sendOtpEmail = async ({ to, otp, purpose }) => {
     ? 'Reset your password'
     : 'Confirm your password change';
 
-  const html = `
+  return `
     <!DOCTYPE html>
     <html>
     <head>
@@ -99,9 +97,34 @@ const sendOtpEmail = async ({ to, otp, purpose }) => {
     </body>
     </html>
   `;
+};
 
+const sendOtpEmail = async ({ to, otp, purpose }) => {
+  const isRegister = purpose === 'register';
+  const isForgot = purpose === 'forgot-password';
+
+  const subject = isRegister
+    ? '🏆 LUCKY STAR FC — Verify Your Account'
+    : isForgot
+    ? '🔑 LUCKY STAR FC — Reset Your Password'
+    : '🔐 LUCKY STAR FC — Password Change OTP';
+
+  const html = buildEmailHtml(otp, purpose);
+  const from = process.env.EMAIL_FROM || `"LUCKY STAR FC" <${process.env.EMAIL_USER}>`;
+
+  if (useSendGrid) {
+    await sgMail.send({
+      to,
+      from,
+      subject,
+      html,
+    });
+    return;
+  }
+
+  const transporter = await createTransporter();
   await transporter.sendMail({
-    from: `"LUCKY STAR FC" <${process.env.EMAIL_USER}>`,
+    from,
     to,
     subject,
     html,
