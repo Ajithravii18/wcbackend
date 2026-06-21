@@ -38,6 +38,7 @@ const startApiFetcher = () => {
       const response = await axios.get(`https://${apiHost}/fixtures?live=all`, {
         headers: {
           'x-rapidapi-key': apiKey,
+          'x-apisports-key': apiKey,
           'x-rapidapi-host': apiHost
         }
       });
@@ -106,6 +107,7 @@ const startApiFetcher = () => {
                 const pastRes = await axios.get(`https://${apiHost}/fixtures?date=${dateStr}`, {
                   headers: {
                     'x-rapidapi-key': apiKey,
+                    'x-apisports-key': apiKey,
                     'x-rapidapi-host': apiHost
                   }
                 });
