@@ -2,6 +2,11 @@ const nodemailer = require('nodemailer');
 const dns = require('dns');
 const sgMail = require('@sendgrid/mail');
 
+// Force IPv4 to prevent ENETUNREACH on environments without IPv6 routing (like Render)
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 const useSendGrid = process.env.EMAIL_SERVICE === 'sendgrid';
 
 if (useSendGrid) {
