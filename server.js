@@ -16,6 +16,15 @@ const commentRoutes = require('./routes/commentRoutes');
 
 const app = express();
 
+// Validate critical env vars at startup
+const REQUIRED_ENV = ['MONGO_URI', 'JWT_SECRET'];
+const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missing.length) {
+  console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+  process.exit(1);
+}
+
+
 // Middleware
 app.use(cors({
   origin: function (origin, callback) {
