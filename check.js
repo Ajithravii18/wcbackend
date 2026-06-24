@@ -1,9 +1,10 @@
+require('dotenv').config();
 const mongoose = require('mongoose');
-require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
-
+const Match = require('./models/Match');
 mongoose.connect(process.env.MONGO_URI).then(async () => {
-  const Match = require('./models/Match');
-  const m = await Match.find({ $or: [{homeTeam: 'France'}, {awayTeam: 'France'}] });
-  console.log(m.map(x => `${x.homeTeam} ${x.homeScore} - ${x.awayScore} ${x.awayTeam} | Winner: ${x.winner}`));
+  const matches = await Match.find({});
+  const matchesWithEvents = matches.filter(m => m.events && m.events.length > 0);
+  console.log('Matches with events:', matchesWithEvents.length);
+  if(matchesWithEvents.length) console.log(matchesWithEvents[0].events);
   process.exit(0);
-});
+}).catch(console.error);

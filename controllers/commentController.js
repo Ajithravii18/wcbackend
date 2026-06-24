@@ -8,7 +8,8 @@ const getComments = async (req, res) => {
   try {
     const comments = await Comment.find({ match: req.params.id })
       .populate('user', 'name avatar')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(50);
     res.json(comments);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -30,14 +31,6 @@ const postComment = async (req, res) => {
       return res.status(404).json({ message: 'Match not found' });
     }
 
-    const existingComment = await Comment.findOne({
-      match: match._id,
-      user: req.user._id
-    });
-
-    if (existingComment) {
-      return res.status(400).json({ message: 'You have already commented on this match' });
-    }
 
     const comment = await Comment.create({
       match: match._id,
