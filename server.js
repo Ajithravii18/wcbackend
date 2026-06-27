@@ -13,6 +13,7 @@ const predictionRoutes = require('./routes/predictions');
 const adminRoutes = require('./routes/admin');
 const notificationRoutes = require('./routes/notificationRoutes');
 const commentRoutes = require('./routes/commentRoutes');
+const leaderboardRoutes = require('./routes/leaderboard');
 
 const app = express();
 
@@ -55,6 +56,8 @@ app.use('/api/matches/:id/comments', commentRoutes);
 app.use('/api/predictions', predictionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/comments', commentRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
 
 // 404 handler
 app.use((req, res) => {
